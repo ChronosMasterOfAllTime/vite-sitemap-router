@@ -1,6 +1,6 @@
 {
     "name": "vite-plugin-sitemap-router",
-    "version": "1.0.2",
+    "version": "1.1.0",
     "type": "module",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -17,7 +17,7 @@
         "lint:fix": "npm run lint -- --fix"
     },
     "dependencies": {
-        "@happy-dom/global-registrator": "^15.7.3"
+        "@happy-dom/global-registrator": "^20.0.0"
     },
     "devDependencies": {
         "@eslint/js": "^9.10.0",
