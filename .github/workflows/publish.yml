@@ -12,24 +12,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Publish ${{ github.event.release.tag_name }}
+  prepare:
+    name: Bump version and retag ${{ github.event.release.tag_name }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # required for npm trusted publishing
     outputs:
       version: ${{ steps.version.outputs.version }}
+      sha: ${{ steps.bump.outputs.sha }}
     steps:
+      # The deploy key is on the main ruleset's bypass list and can move tags.
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.release.tag_name }}
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+          fetch-depth: 0
 
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
-          registry-url: https://registry.npmjs.org
 
       - name: Resolve version from release tag
         id: version
@@ -43,11 +42,84 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      # Commit the version bump on top of the released commit and move the
+      # release tag onto it, so the tag, package.json and npm all agree.
+      - name: Commit version bump and move tag
+        id: bump
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          release_sha="$(git rev-parse HEAD)"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "package.json already at $VERSION; tag is correct."
+            echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git add package.json package-lock.json
+          git commit -m "chore(release): v${VERSION}"
+          bump_sha="$(git rev-parse HEAD)"
+
+          git tag -f "$TAG" "$bump_sha"
+          git push -f origin "refs/tags/${TAG}"
+          echo "sha=$bump_sha" >> "$GITHUB_OUTPUT"
+
+          if [ "$PRERELEASE" = "true" ]; then
+            echo "Prerelease: leaving ${BRANCH} unchanged."
+            exit 0
+          fi
+
+          git fetch origin "$BRANCH"
+          if git merge-base --is-ancestor "origin/${BRANCH}" "$bump_sha"; then
+            git push origin "${bump_sha}:refs/heads/${BRANCH}"
+          else
+            # Default branch moved past the released commit; bump it separately.
+            git checkout -B "$BRANCH" "origin/${BRANCH}"
+            npm version "$VERSION" --no-git-tag-version --allow-same-version
+            if ! git diff --quiet -- package.json package-lock.json; then
+              git add package.json package-lock.json
+              git commit -m "chore(release): v${VERSION}"
+              git push origin "HEAD:${BRANCH}"
+            fi
+          fi
+
+  publish:
+    name: Publish ${{ github.event.release.tag_name }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for npm trusted publishing
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Verify package version
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          actual="$(node -p "require('./package.json').version")"
+          if [ "$actual" != "$VERSION" ]; then
+            echo "::error::package.json is $actual but release is $VERSION."
+            exit 1
+          fi
+
       - run: npm ci
-
-      - name: Set package version
-        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
-
       - run: npx eslint . --max-warnings 0
       - run: npm run typecheck
       - run: npm test
@@ -56,7 +128,7 @@ jobs:
       # Authenticates via npm trusted publishing (OIDC); no NPM_TOKEN needed.
       - name: Publish
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.version }}
           PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           name="$(node -p "require('./package.json').name")"
@@ -71,38 +143,3 @@ jobs:
           fi
 
           npm publish --provenance --access public --tag "$dist_tag"
-
-  bump-version:
-    name: Bump package.json on default branch
-    needs: publish
-    if: ${{ !github.event.release.prerelease }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-
-      - name: Commit version bump
-        env:
-          VERSION: ${{ needs.publish.outputs.version }}
-          BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
-
-          if git diff --quiet -- package.json package-lock.json; then
-            echo "package.json already at $VERSION"
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json
-          git commit -m "chore(release): v${VERSION}"
-          git push origin "HEAD:${BRANCH}"

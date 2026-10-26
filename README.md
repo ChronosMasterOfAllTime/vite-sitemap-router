@@ -138,7 +138,7 @@ Releases are automated with [Release Drafter](https://github.com/release-drafter
 
 1. Every merge to `main` updates a draft GitHub release. The next version is calculated from the latest published release using PR labels: `major`/`breaking` → major, `minor`/`feature`/`enhancement` → minor, anything else → patch. PRs are auto-labelled from conventional-commit titles (`feat:`, `fix:`, `docs:`, `chore:`, `feat!:` …) and branch names.
 2. If no release has been published yet, the workflow creates a baseline release `v<package.json version>` so drafting continues from the version already on npm.
-3. Publishing the draft release triggers `publish.yml`, which sets `package.json` to the release version, runs lint/typecheck/tests/build, publishes to npm (with provenance; prereleases use the `next` dist-tag) and then commits the version bump back to `main`.
+3. Publishing the draft release triggers `publish.yml`. It commits the version bump to `package.json`, moves the release tag onto that commit (so the tag, `package.json` and npm all match), pushes it to `main` (stable releases only), then runs lint/typecheck/tests/build and publishes to npm with provenance. Prereleases use the `next` dist-tag.
 
 Publishing uses [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC), so no npm token is stored in the repo. The package's trusted publisher on npmjs.com must point at this repository and the `publish.yml` workflow. The version bump is pushed with the `RELEASE_DEPLOY_KEY` deploy key, which is on the `main` ruleset's bypass list.
 
