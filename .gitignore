@@ -21,3 +21,5 @@ yarn-error.log*
 
 .vitest_cache
 .vite_cache
+
+coverage

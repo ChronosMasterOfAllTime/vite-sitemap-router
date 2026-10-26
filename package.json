@@ -2,6 +2,10 @@
     "name": "vite-plugin-sitemap-router",
     "version": "1.1.0",
     "type": "module",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/ChronosMasterOfAllTime/vite-sitemap-router.git"
+    },
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "files": [
@@ -14,26 +18,31 @@
     "scripts": {
         "build": "npm i -s && rm -rf dist && tsup-node src/index.ts --silent --sourcemap --dts --format esm,cjs",
         "lint": "npm i -s && eslint . --max-warnings 0 --cache",
-        "lint:fix": "npm run lint -- --fix"
+        "lint:fix": "npm run lint -- --fix",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "typecheck": "tsc --noEmit -p tsconfig.test.json"
     },
     "dependencies": {
-        "@happy-dom/global-registrator": "^20.0.0"
+        "@happy-dom/global-registrator": "^21.0.4"
     },
     "devDependencies": {
         "@eslint/js": "^9.10.0",
         "@types/eslint__js": "^8.42.3",
         "@types/node": "^22.5.4",
-        "@typescript-eslint/eslint-plugin": "^8.5.0",
-        "@typescript-eslint/parser": "^8.5.0",
+        "@typescript-eslint/eslint-plugin": "^8.72.1",
+        "@typescript-eslint/parser": "^8.72.1",
         "eslint": "^9.10.0",
         "eslint-config-prettier": "^9.1.0",
         "eslint-plugin-prettier": "^5.2.1",
+        "globals": "^17.13.0",
         "prettier": "^3.3.3",
         "rollup": "^4.21.2",
         "tsup": "^8.2.4",
         "typescript": "^5.5.4",
-        "typescript-eslint": "^8.5.0",
+        "typescript-eslint": "^8.72.1",
         "vite": "*",
+        "vitest": "^5.0.5",
         "vue-router": "*"
     }
 }

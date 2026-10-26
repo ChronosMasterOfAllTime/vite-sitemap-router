@@ -1,0 +1,78 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+categories:
+  - title: '💥 Breaking Changes'
+    semver-increment: major
+    when:
+      labels:
+        - 'major'
+        - 'breaking'
+  - title: '🚀 Features'
+    semver-increment: minor
+    when:
+      labels:
+        - 'minor'
+        - 'feature'
+        - 'enhancement'
+  - title: '🐛 Bug Fixes'
+    semver-increment: patch
+    when:
+      labels:
+        - 'fix'
+        - 'bugfix'
+        - 'bug'
+  - title: '📝 Documentation'
+    semver-increment: patch
+    when:
+      label: 'documentation'
+  - title: '🧰 Maintenance'
+    semver-increment: patch
+    when:
+      labels:
+        - 'chore'
+        - 'dependencies'
+        - 'ci'
+  - type: 'pre-exclude'
+    when:
+      label: 'skip-changelog'
+  - type: 'version-resolver'
+    semver-increment: 'patch'
+change-template: '- $TITLE (#$NUMBER) $AUTHORS'
+change-title-escapes: '\<*_&'
+template: |
+  ## What's Changed
+
+  $CHANGES
+
+  **Full Changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...$RESOLVED_TAG
+
+sync-labels: true
+autolabeler:
+  - labels: ['breaking']
+    title:
+      - '/^\w+(\(.+\))?!:/'
+    body:
+      - '/BREAKING CHANGE/'
+  - labels: ['documentation']
+    files:
+      - '*.md'
+    branch:
+      - '/^docs?\/.+/'
+    title:
+      - '/^docs(\(.+\))?:/i'
+  - labels: ['bug']
+    branch:
+      - '/^(bug)?fix\/.+/'
+    title:
+      - '/^fix(\(.+\))?!?:/i'
+  - labels: ['feature']
+    branch:
+      - '/^feat(ure)?\/.+/'
+    title:
+      - '/^feat(\(.+\))?!?:/i'
+  - labels: ['ci']
+    files:
+      - '.github/**'
+  - labels: ['chore']
+    title:
+      - '/^(chore|build|refactor|test|perf|style)(\(.+\))?!?:/i'
