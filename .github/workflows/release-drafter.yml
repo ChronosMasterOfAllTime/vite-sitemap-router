@@ -1,0 +1,72 @@
+name: Release Drafter
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-drafter-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  update_release_draft:
+    name: Update release draft
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+
+      # Release Drafter calculates the next version from the latest published
+      # release. If none exists yet, publish a baseline release that matches the
+      # version in package.json (already on npm) so the first draft builds on it.
+      - name: Ensure baseline release matches package.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [ -n "$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[].tagName')" ]; then
+            echo "Published release found; no baseline needed."
+            exit 0
+          fi
+
+          version="$(node -p "require('./package.json').version")"
+          tag="v${version}"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "::error::Release $tag exists but is not published. Publish or delete it so Release Drafter has a baseline."
+            exit 1
+          fi
+
+          target="$GITHUB_SHA"
+          if [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] \
+            && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            target="$BEFORE_SHA"
+          fi
+
+          echo "Creating baseline release $tag at $target"
+          gh release create "$tag" \
+            --target "$target" \
+            --title "$tag" \
+            --notes "Baseline release for \`$tag\` (matches \`package.json\` and the version already published to npm)." \
+            --latest
+
+      - uses: release-drafter/release-drafter@v7
+
+  autolabel:
+    name: Auto label pull request
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: release-drafter/release-drafter/autolabeler@v7

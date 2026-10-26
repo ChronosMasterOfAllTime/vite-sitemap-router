@@ -1,0 +1,108 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish ${{ github.event.release.tag_name }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for npm trusted publishing
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve version from release tag
+        id: version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="${TAG#v}"
+          if ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Release tag '$TAG' is not a valid semver version (expected vX.Y.Z)."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - run: npm ci
+
+      - name: Set package version
+        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
+
+      - run: npx eslint . --max-warnings 0
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      # Authenticates via npm trusted publishing (OIDC); no NPM_TOKEN needed.
+      - name: Publish
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          if npm view "${name}@${VERSION}" version >/dev/null 2>&1; then
+            echo "${name}@${VERSION} is already on npm; skipping publish."
+            exit 0
+          fi
+
+          dist_tag="latest"
+          if [ "$PRERELEASE" = "true" ]; then
+            dist_tag="next"
+          fi
+
+          npm publish --provenance --access public --tag "$dist_tag"
+
+  bump-version:
+    name: Bump package.json on default branch
+    needs: publish
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Commit version bump
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "package.json already at $VERSION"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore(release): v${VERSION}"
+          git push origin "HEAD:${BRANCH}"
